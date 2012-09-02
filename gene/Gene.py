@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 #logger.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 class Gene(object):
     '''
@@ -24,6 +24,7 @@ class Gene(object):
     
     """ Max number of genes that can be used """
     DNA_SPACE_MAX_LEN = 200
+
     def __unicode__(self):
         return "Gene -- Score: %s, Output1: %s, Output2: %s" % (self.score, self.output1, self.output2)
     
@@ -41,20 +42,10 @@ class Gene(object):
         self.memory_holder = {}
         self.DNA = []
         #A list of functions that map to DNA characters
-        self.DNA_LIST = {}
         self.score = -1
         self.output1 = None
         self.output2 = None
-        #Figure out DNA components
-        #This bit generates the mapping of "genes" (e.g. 'a' or 'C') to methods that do things.
-        dna_methods = []
-        for k in Gene.__dict__.keys():
-            if k.startswith('D__'):
-                dna_methods.append(Gene.__dict__.get(k))
-        dna_char = '0'
-        for method in dna_methods:
-            self.DNA_LIST[dna_char] = method
-            dna_char = chr(ord(dna_char) + 1)
+
             
         #Spawn a Random DNA strand
         if full_random:
@@ -145,26 +136,27 @@ class Gene(object):
         """
         The meat of the algo: Use the genes to process the inputs
         """
-        logger.debug('inputs', input1, input2)
+        logger.debug('inputs %s, %s' % (input1, input2))
         tres1 = input1
         tres2 = input2
         for gene in self.DNA:
             dmeth = self.DNA_LIST[gene]
-            logger.debug('Dmeth is: %s' % dmeth)
-            logger.debug('tres1, tres2::', tres1, tres2)
+#            logger.debug('Dmeth is: %s' % dmeth)
+            _input1, _input2 = (tres1, tres2)
             (tres1, tres2) = self.DNA_LIST[gene](self,tres1, tres2)
+            logger.debug('%s(%s, %s) = %s, %s' % (dmeth, _input1, _input2, tres1, tres2))
         self.output1 = tres1
         self.output2 = tres2
         return (self.output1, self.output2)
         
     @staticmethod
-    def make_child_genes(parent1=None, parent2=None, mutation_rate=0.1):
+    def make_child_genes(parent1=None, parent2=None, mutation_rate=0.3):
         """
         Generates 2 new Genes.  Should specify at *least* one parent (will clone the parent
         if only one is specified), combine at random, throw in mutation as specified (or use default)
         Returns a TUPLE of the two genes!
         """
-        return Gene._mutate_one_or_both(parent1, parent2, mutation_rate)
+        return Gene._create_dna(parent1, parent2, mutation_rate)
     
     def add (self, a, b):
         if a==None:
@@ -237,3 +229,21 @@ class Gene(object):
 
     def __len__(self):
         return len(self.DNA)
+    
+    
+    
+    
+DNA_LIST = {}
+#Figure out DNA components
+#This bit generates the mapping of "genes" (e.g. 'a' or 'C') to methods that do things.
+dna_methods = []
+for k in Gene.__dict__.keys():
+    if k.startswith('D__'):
+        dna_methods.append(Gene.__dict__.get(k))
+dna_char = '0'
+for method in dna_methods:
+    DNA_LIST[dna_char] = method
+    dna_char = chr(ord(dna_char) + 1)
+
+Gene.DNA_LIST = DNA_LIST
+Gene.dna_methods = dna_methods
