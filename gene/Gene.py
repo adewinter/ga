@@ -4,23 +4,68 @@ Created on Sep 1, 2012
 @author: adewinter
 '''
 import random
+import logging
+
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.StreamHandler())
+#logger.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 class Gene(object):
     '''
     classdocs
     '''
-    #A list of functions that map to DNA characters
-    DNA_LIST = {
-        'A': add,
-        'B': subtract,
-        'C': remember
-    }
+    class DIRECTION(object):
+        LEFT=1
+        RIGHT=2
+        BOTH=3
+
     
     """ Max number of genes that can be used """
     DNA_SPACE_MAX_LEN = 200
+    def __unicode__(self):
+        return "Gene -- Score: %s, Output1: %s, Output2: %s" % (self.score, self.output1, self.output2)
     
-    DNA = []
+    def __repr__(self):
+        return self.__unicode__()
     
+    def __str__(self):
+#        return "foo"
+        return self.__unicode__()
+    def __init__(self, DNA=None, full_random=True, mutation_rate=0.1):
+        '''
+        Constructor
+        '''
+        self.mutation_rate = mutation_rate
+        self.memory_holder = {}
+        self.DNA = []
+        #A list of functions that map to DNA characters
+        self.DNA_LIST = {}
+        self.score = -1
+        self.output1 = None
+        self.output2 = None
+        #Figure out DNA components
+        #This bit generates the mapping of "genes" (e.g. 'a' or 'C') to methods that do things.
+        dna_methods = []
+        for k in Gene.__dict__.keys():
+            if k.startswith('D__'):
+                dna_methods.append(Gene.__dict__.get(k))
+        dna_char = '0'
+        for method in dna_methods:
+            self.DNA_LIST[dna_char] = method
+            dna_char = chr(ord(dna_char) + 1)
+            
+        #Spawn a Random DNA strand
+        if full_random:
+            self._configure_full_random()
+            return
+        else:
+            if DNA:
+                self.DNA = DNA
+            else:
+                raise Exception('You need to specify some DNA when trying to create a new Gene')
+                
     @staticmethod
     def _mutate_DNA(DNA,mutation_rate):
         """
@@ -96,21 +141,22 @@ class Gene(object):
         for i in range(DNA_LEN):
             self.DNA.append(random.choice(self.DNA_LIST.keys()))
 
-    def __init__(self, DNA=None, full_random=True, mutation_rate=0.1):
-        '''
-        Constructor
-        '''
-        self.mutation_rate = mutation_rate
-        if full_random:
-            self._configure_full_random()
-            return
-        else:
-            if DNA:
-                self.DNA = DNA
-            else:
-                raise Exception('You need to specify some DNA when trying to create a new Gene')
-                
-    
+    def run(self,input1, input2):
+        """
+        The meat of the algo: Use the genes to process the inputs
+        """
+        logger.debug('inputs', input1, input2)
+        tres1 = input1
+        tres2 = input2
+        for gene in self.DNA:
+            dmeth = self.DNA_LIST[gene]
+            logger.debug('Dmeth is: %s' % dmeth)
+            logger.debug('tres1, tres2::', tres1, tres2)
+            (tres1, tres2) = self.DNA_LIST[gene](self,tres1, tres2)
+        self.output1 = tres1
+        self.output2 = tres2
+        return (self.output1, self.output2)
+        
     @staticmethod
     def make_child_genes(parent1=None, parent2=None, mutation_rate=0.1):
         """
@@ -120,28 +166,74 @@ class Gene(object):
         """
         return Gene._mutate_one_or_both(parent1, parent2, mutation_rate)
     
-    @staticmethod
-    def add (a, b):
+    def add (self, a, b):
+        if a==None:
+            a=0
+        if b==None:
+            b=0
         return a+b
     
-    @staticmethod
-    def subtract (a,b):
+    def D__ADD_LEFT (self,a,b):
+        return (self.add(a,b), b)
+    
+    def D__ADD_RIGHT (self, a, b):
+        return (a, self.add(a,b))
+    
+    def subtract (self, a, b):
+        if a==None:
+            a=0
+        if b==None:
+            b=0
         return a-b
     
-    global remember_holder
-    @staticmethod
-    def remember (a,b):
+    def D__SUBTRACT_LEFT(self, a, b):
+        return (self.subtract(a,b), b)
+    
+    def D__SUBTRACT_RIGHT(self, a, b):
+        return (a, self.subtract(a,b))
+    
+    def D__EQUALIZE_LEFT(self, a, b):
+        return (a, a)
+    
+    def D__EQUALIZE_RIGHT(self, a, b):
+        return (b, b)
+    
+    def D__AVERAGE_LEFT(self, a, b):
+        if a==None:
+            a=0
+        if b==None:
+            b=0
+        return ((a+b)/2, b)
+    
+    def D__AVERAGE_RIGHT(self, a, b):
+        if a==None:
+            a=0
+        if b==None:
+            b=0
+        return (a, (a+b)/2)
+    
+    def remember_recall(self, idx, a=None):
         """
-        "Remembers" value 'a'.  Does nothing with 'b'.
-        If !a, return remember_holder
-        if a, set remember_holder = a and return a
+        "Remembers" value 'a' and places it at location idx
+        "Recalls" when only idx is specified or returns None
         """
-        if a:
-            remember_holder = a
-            return a
+        if not a:
+            return self.memory_holder.get(idx)
         else:
-            return remember_holder
+            self.memory_holder[idx] = a
         
-        
+    def D__REMEMEBER_RECALL_RIGHT(self, a, b):
+        return (a, self.remember_recall(a, b))
+    
+    def D__REMEMBER_RECALL_LEFT(self, a, b):
+        return (self.remember_recall(a, b), b)
+    
+    def D__REV_REMEMEBER_RECALL_RIGHT(self, a, b):
+        return (a, self.remember_recall(b, a))
+    
+    def D__REV_REMEMBER_RECALL_LEFT(self, a, b):
+        return (self.remember_recall(b, a), b)
+    
+
     def __len__(self):
         return len(self.DNA)
