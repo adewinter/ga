@@ -7,33 +7,59 @@ from gene.Gene import Gene
 from pprint import pformat
 import logging
 import uuid
+from spark import spark_string
+import os
+
+clear_console = 'clear' if os.name == 'posix' else 'CLS'
 
 logger = logging.getLogger(__name__)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+#formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+#handler = logging.StreamHandler()
+#handler.setFormatter(formatter)
+#foo = logger.handlers
+##logger.addHandler(handler)
+#logger.setLevel(logging.DEBUG)
 
 
-class GA_MUL(object):
+class TestRunCoordinator(object):
     '''
-    classdocs
+    The TestRunCoordinator takes care of initializing a candidate pool, evaluating fitness, culling candidates and reproduction.
     '''
     
     MAX_RUNS = 200
 
+    """A list of lists, showing top 5 scoring GENES of each round
+    e.g.
+    [ [<gene>,<gene>,...], [<gene>,<gene>,...] ]
+    Shows the top 5 scoring genes for the first and second round runs of a trial.
+    """
+    top_five_scores = []
+    
+    """
+    Average score per run
+    """
+    avg_scores = []
+    
+    """
+    Top score from each run
+    """
+    top_scores = []
+    
+    """Useful Summary data about runs"""
+    summary_data = None
+        
     def __init__(self, num_starting_candidates):
         '''
         Constructor
         '''
         #Customize file logging output to make it easier to put things together in splunk
         guid = uuid.uuid4()
-        formatter = logging.Formatter('ID=' + str(guid) + ' - %(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('ID=' + str(guid) + ',%(asctime)s [%(name)s][%(levelname)s] %(message)s')
         fh = logging.FileHandler('ga_trials.log')
-        fh.setLevel(logging.INFO)
+        fh.setLevel(logging.DEBUG)
         fh.setFormatter(formatter)
         logger.addHandler(fh)
+        foo = logger.handlers
         
         self.candidates = []
         #generate the initial number of candidates
@@ -75,71 +101,73 @@ class GA_MUL(object):
             new_pool.append(child4)
         return new_pool
     
+    def should_break(self, candidates, num_runs):
+        """
+        Decides if we should stop doing the round runs, because scores have stabilized or we've hit max runs.
+        Updates Summary Data!
+        Assumes Top Scores are already generated!
+        """
+        
+        if num_runs >= self.MAX_RUNS:
+            self.summary_data = "MAX_RUNS reached. Stopped."
+            return True
+        
+        if candidates[0].score == 3:
+            self.summary_data = "CANDIDATE WITH CORRECT SCORE FOUND! Gene: %s" % ''.join(candidates[0].DNA)
+            return True
+            
     def run_rounds(self):
         logger.info('Running rounds')
         _run=0
         
+        
         while True:
-            for candidate in self.candidates:
-                found_candidate = self.evaluate_candidate(candidate)
-                if found_candidate:
-                    break
-            self.candidates.sort(key=lambda x: x.score, reverse=False)
-            str_scores = ','.join(map(lambda x: str(x.score), self.candidates))
-            logger.info('Run #%s, Score_Summary=%s' % (_run, str_scores))
-            int_scores = map(lambda x: x.score, self.candidates)
-            avg_score = sum(int_scores, 0.0) / len(int_scores)
-            logger.info('Run #%s, Average_Score=%s' % (_run, avg_score))
-            if found_candidate:
-                logger.info('=======================================')
-                logger.info('Summary of each candidate in this pool:')
-                for candidate in self.candidates:
-                    logger.info('%s' % candidate.__unicode__())
-                logger.info('=================================')
-                logger.info('Found a candidate! %s' % found_candidate)
-                logger.info('Best candidate DNA is: %s' % ''.join(found_candidate.DNA))
-                logger.info('=================================')
-                return candidate #break the loop
+            os.system(clear_console)
+            logger.info('Evaluating Candidates.')
+            ### YOU CAN OVERRIDE EVALUATE_CANDIDATE with your own Fitness Function
             
-            logger.debug('Culling')
+            raw_scores = map(self.evaluate_candidate, self.candidates)# Sort candidates by score.
+            self.candidates.sort(key=lambda x: x.score, reverse=True)
+            
+            # Update Top Scorers tally
+            self.top_five_scores.append(self.candidates[0:4]) #since we've already sorted.
+            self.top_scores.append(self.candidates[0].score)
+            
+            #FOR DEBUG
+#            str_scores = ','.join(map(lambda x: str(x.score), self.candidates))
+#            logger.debug('Run #%s, Score_Summary=%s' % (_run, str_scores))
+            avg_score = sum(raw_scores, 0.0) / len(raw_scores)
+            self.avg_scores.append(avg_score)
+            logger.info('Run #%s, Average_Score=%s' % (_run, avg_score))
+            logger.info('Average scores over all last runs:: %s' % spark_string(self.avg_scores, True))
+            logger.info('Top score over all last runs:: %s' % spark_string(self.top_scores, True))
+            logger.info('Scores for this run:: %s' %spark_string(map(lambda x: x.score, self.candidates)))
+         
+            if self.should_break(self.candidates, _run):
+                logger.info('=======================================')
+                logger.info('Scores Stabilized.')
+                logger.info('Summary Data: %s' % self.summary_data)
+                logger.info('=======================================')
+                logger.debug('Summary of each candidate in this pool:')
+                for candidate in self.candidates:
+                    logger.debug('%s' % candidate.__unicode__())
+                logger.debug('=================================')
+                logger.info('Top Five Candidates + scores %s' % self.top_five_scores[-1])
+                logger.info('Best candidate DNA is: %s' % ''.join(self.top_five_scores[-1][0].DNA))
+                logger.info('=================================')
+                break
+            
+            logger.debug('Culling pool')
             self.cull_bad_candidates()
             logger.debug('Generating new generation')
             self.candidates = self.generate_new_pool()
-            if _run == self.MAX_RUNS:
-                logger.info('MAXIMUM NUMBER OF ITERATIONS REACHED. EXITING')
-                return
+
             _run = _run+1
+            
             
     def evaluate_candidate(self, gene):
         """
-        Returns the score of the candidate
-        
-        Here we're trying to evaluate for closest to 3 * 7 (i.e. 21)
-        Give points for multiples of 3 or 7 as well
-        Closest to 0 score is best. You get zero if your output is 21 on either output 1 or output 2
-        
-        We pick the highest score between the two outputs
+        Implement me based on what you're trying to do!
+        Higher score is a more fit candidate!
         """
-        def get_score(output):
-            if output == None:
-                output = 0
-            s = abs(21 - output)
-            if output % 3 == 0:
-                s = s/2
-            if output % 7 == 0:
-                s = s/2
-            return s
-        
-        out1,out2 = gene.run(3,7)
-        
-        s1 = get_score(out1)
-        s2 = get_score(out2)
-        
-        if out1 == out2 == None: # or out1 == out2 == 0:
-            s1 = s1+50
-            s2 = s2+50
-        
-        gene.score = s1 if s1 <= s2 else s2
-        
-        if gene.score == 0:
-            return gene
+        raise NotImplementedError

@@ -10,11 +10,19 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.StreamHandler())
 #logger.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.DEBUG)
 
 class Gene(object):
     '''
-    classdocs
+    Lay out some terms:
+    DNA:  List of Genes
+    GENE: Functional operation that can be performed on inputs
+    
+    Data structure:
+    Gene: <function ...>
+    DNA: [Char, Char, ... ]
+    
+    Each Char represents a character that maps to a Gene.
     '''
     class DIRECTION(object):
         LEFT=1
@@ -22,7 +30,7 @@ class Gene(object):
         BOTH=3
 
     
-    """ Max number of genes that can be used """
+    """ Max number of DNA blocks that can be used by Gene """
     DNA_SPACE_MAX_LEN = 200
 
     def __unicode__(self):
@@ -68,14 +76,20 @@ class Gene(object):
         
         def ADD_GENE(g):
             """
-            Pick a random gene and return it as a list
+            Pick a random DNA Block Function and return it as appended to existing Gene list
             """
             return [g, random.choice(Gene.DNA_LIST.keys())]
         
         def DEL_GENE(g):
+            """
+            Simply deletes the Gene
+            """
             return []
         
         def FLIP_GENE(g):
+            """
+            Swaps out DNABF (DNA Block function) with another randomly chosen one
+            """
             return [random.choice(Gene.DNA_LIST.keys())]
         
         _OPS = [ADD_GENE,DEL_GENE,FLIP_GENE]
